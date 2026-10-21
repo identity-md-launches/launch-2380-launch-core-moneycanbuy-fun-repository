@@ -1,0 +1,50 @@
+{
+  "kind": "evm_contracts",
+  "contracts": [
+    {
+      "contract": "YoloLockHub",
+      "constructorArgs": [
+        "0x49E55A87AA4bB0d2fd58fDCf1A31c9612DE015dc"
+      ]
+    },
+    {
+      "contract": "CaseDesk",
+      "constructorArgs": [
+        "0x25576E455A87B92836EA901E89e6b26e59306BE9",
+        "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "0xAdfe6bd2C17dB514241e1A9B3342F88876073B7F",
+        "0x6b491127d1a6507363FEEcC3420153AA77873881",
+        "0x49E55A87AA4bB0d2fd58fDCf1A31c9612DE015dc",
+        "$contract:YoloLockHub"
+      ]
+    },
+    {
+      "contract": "DisputeDesk",
+      "constructorArgs": [
+        "0x25576E455A87B92836EA901E89e6b26e59306BE9",
+        "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "0xAdfe6bd2C17dB514241e1A9B3342F88876073B7F",
+        "0xEac6b7525f184ADA392601ed1Ce197fbC9F809b8",
+        "0x49E55A87AA4bB0d2fd58fDCf1A31c9612DE015dc",
+        "$contract:YoloLockHub"
+      ]
+    },
+    {
+      "contract": "TaskVault",
+      "constructorArgs": [
+        "0x25576E455A87B92836EA901E89e6b26e59306BE9",
+        "0xd34a99bc0f67ae1bbd63c660e6d0b0dd03e263b7",
+        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48",
+        "0x49E55A87AA4bB0d2fd58fDCf1A31c9612DE015dc",
+        "0x88eB0e6A38A8eA9A291697cf2420EFbA6EE0CCf9",
+        "0xAdfe6bd2C17dB514241e1A9B3342F88876073B7F",
+        "$contract:CaseDesk",
+        "$contract:DisputeDesk",
+        "0xbf6838E27F82754443724006D127a130B9dd9E0A"
+      ]
+    }
+  ],
+  "notes": "Ethereum mainnet core of moneycanbuy.fun, the third of four launches. Uses the YOLO token and support contracts of launch #2364 at the approved static addresses. Deploy YoloLockHub, CaseDesk, DisputeDesk and TaskVault together in this order; TaskVault wires both desks during construction. YoloLockHub holds doer YOLO locks, CaseDesk manages submissions and their state machine, DisputeDesk manages disputes, NFT votes, appeals and settlements, and TaskVault holds task funds and receives Intake callbacks. The fourth launch supplies the additional modules. No token or pool is created by this launch."
+}
