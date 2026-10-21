@@ -118,6 +118,9 @@ contract TaskVault {
     address public sweetener;
 
     bool private transient _entered;
+    /// @dev The user of the forwarded call in progress (set by the fallback, under the lock): the only account the
+    ///      desks can make the vault pull tokens from (collectImd, collectBondPart).
+    address private transient _caller;
 
     error ReentrancyGuardReentrantCall();
 
@@ -138,14 +141,15 @@ contract TaskVault {
         if (registry_ == address(0) || imd_ == address(0) || usdc_ == address(0) || yolo_ == address(0)) {
             revert BadCurrency();
         }
-        if (burner_.code.length == 0) revert WrongWiring();
+        // the burner and the attestation checker are contracts of an earlier launch: the constructor neither calls
+        // them nor requires their code (the launch rehearsal runs it on an empty chain); both are checked on first
+        // use instead (_burn, ask)
         burner = burner_;
         registry = registry_;
         imd = IERC20(imd_);
         usdc = IERC20(usdc_);
         yolo = IERC20(yolo_);
         attestationChecker = AttestationChecker(attestationChecker_);
-        if (address(attestationChecker.registry()) != registry_) revert WrongWiring();
         textRules = TextRules(textRules_);
         caseDesk = caseDesk_;
         disputeDesk = disputeDesk_;
@@ -192,7 +196,9 @@ contract TaskVault {
         } else {
             if (_entered) revert ReentrancyGuardReentrantCall();
             _entered = true;
+            _caller = msg.sender;
             (ok, ret) = target.call(data);
+            _caller = address(0);
             _entered = false;
         }
         assembly ("memory-safe") {
@@ -417,11 +423,14 @@ contract TaskVault {
         doer;
     }
 
-    /// @dev The task's $YOLO add-on; 0 while no sweetener is bound.
+    /// @dev The task's $YOLO add-on; 0 while no sweetener is bound. Fail-safe like the hub and DevPrices reads: a
+    ///      sweetener that reverts or answers anything but one word counts as no add-on and never blocks a submission.
     function _addon(uint256 taskId) private view returns (uint256) {
         address s = sweetener;
         if (s == address(0)) return 0;
-        return IAddon(s).bonusOf(taskId);
+        (bool ok, bytes memory ret) = s.staticcall(abi.encodeCall(IAddon.bonusOf, (taskId)));
+        if (!ok || ret.length != 32) return 0;
+        return abi.decode(ret, (uint256));
     }
 
     /// @notice A new submission joins its task: active at once, or queued behind the active one.
@@ -539,17 +548,19 @@ contract TaskVault {
         onlyDesk
         returns (uint256 ethNeeded)
     {
-        return _collectImd(from, msgValue, needed, adapter, payIn);
+        if (from != _caller) revert NotAuthorized();
+        return _collectImd(_caller, msgValue, needed, adapter, payIn);
     }
 
     /// @notice Books `amount` of `currency` from `from` for a bond's "rew" or "add" part: ETH from msg.value, IMD or
-    ///         any other token by plain transferFrom. No swap, no oracle.
-    // slither-disable-next-line arbitrary-send-erc20
+    ///         any other token by plain transferFrom. No swap, no oracle. `from` must be the user of the forwarded
+    ///         call in progress, and the tokens are pulled from that user (`_caller`), never from an argument.
     function collectBondPart(address from, uint256 msgValue, address currency, uint256 amount)
         external
         onlyDesk
         returns (uint256 ethNeeded)
     {
+        if (from != _caller) revert NotAuthorized();
         if (amount == 0) return 0;
         if (currency == ETH) {
             liabilities[ETH] += amount;
@@ -558,9 +569,9 @@ contract TaskVault {
         if (currency == address(imd)) {
             // slither-disable-next-line uninitialized-local
             ImdPay memory noSwap;
-            return _collectImd(from, msgValue, amount, address(0), noSwap);
+            return _collectImd(_caller, msgValue, amount, address(0), noSwap);
         }
-        IERC20(currency).safeTransferFrom(from, address(this), amount);
+        IERC20(currency).safeTransferFrom(_caller, address(this), amount);
         liabilities[currency] += amount;
         return 0;
     }
@@ -602,6 +613,8 @@ contract TaskVault {
         returns (bool ok, uint256 spent, bytes32 rid)
     {
         IERC20 imd_ = imd;
+        // the wiring check the constructor cannot make (no call there): the checker must read this vault's registry
+        if (address(attestationChecker.registry()) != registry) revert WrongWiring();
         uint256 price = t.price;
         address intake = t.intake;
         uint256 balBefore = imd_.balanceOf(address(this));
@@ -674,6 +687,7 @@ contract TaskVault {
     ///      payout, so it falls back to the burner, where `forward` can retry later.
     function _burn(address token, uint256 amount) private {
         if (amount == 0) return;
+        if (burner.code.length == 0) revert WrongWiring(); // checked here, not in the constructor
         if (token == address(yolo)) {
             _pay(token, burner, amount);
         } else {

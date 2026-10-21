@@ -397,7 +397,8 @@ These are rules of the protocol as written.
 Every launch is one transaction of the IMD ProjectFactory under the EIP-7825 cap of 16,777,216 gas; the whole system
 does not fit one, so four launches. The core contracts must be one launch because a desk accepts `wire` only inside
 the transaction that deployed it (transient flag, `desks/Desk.sol`); the hub comes first because a launch argument
-may only name an earlier contract. The vault refuses a burner without code, which is why the burner is in launch 1.
+may only name an earlier contract. The vault refuses a burner without code at its first burn (the constructor makes no
+check, since the launch rehearsal runs it on an empty chain), which is why the burner is in launch 1.
 Launch 0 comes first because the token launch's `remainderTo` must be a fixed address and the token takes the
 NftGate as an argument; the $YOLO modules and the directory come after the core because they need the vault's
 address. Users call, approve and read only the vault, which forwards desk functions with a plain CALL and the

@@ -91,8 +91,9 @@ contract DesksTest is Base {
         );
     }
 
-    /// @notice The burner is paid on every staked payout: a burner without code cannot be wired (WrongWiring). The
-    /// doer stake (YoloLockHub) may be deployed after the desk in the same launch, so the desk takes any
+    /// @notice The burner is paid on every staked payout. The constructor no longer requires its code (the launch
+    /// rehearsal runs it on an empty chain, ADAPTATION.md): a vault with a code-less burner deploys, and its first
+    /// burn refuses with WrongWiring (test/LaunchAdaptation.t.sol). The doer stake (YoloLockHub) may be deployed after the desk in the same launch, so the desk takes any
     /// address; a hub without code (or a failing one) only means "not staked": the payout goes on (10% fee).
     function test_BurnerMustHaveCode_DoerStakeMayBeLater() public {
         TextRules text = new TextRules();
@@ -107,8 +108,9 @@ contract DesksTest is Base {
             address(yolo),
             address(hub)
         );
-        DisputeDesk dd =
-            new DisputeDesk(address(registry), address(imd), address(usdc), address(text), ballots, address(yolo), stranger);
+        DisputeDesk dd = new DisputeDesk(
+            address(registry), address(imd), address(usdc), address(text), ballots, address(yolo), stranger
+        );
         assertEq(address(dd.doerStake()), stranger);
         cd = new CaseDesk(
             address(registry),
@@ -120,8 +122,8 @@ contract DesksTest is Base {
             stranger
         );
         AttestationChecker checker = new AttestationChecker(address(registry));
-        vm.expectRevert(WrongWiring.selector);
-        new TaskVault(
+        // deploys (no code check in the constructor); the burner is checked on first use
+        TaskVault noBurner = new TaskVault(
             address(registry),
             address(imd),
             address(usdc),
@@ -131,6 +133,20 @@ contract DesksTest is Base {
             address(cd),
             address(dd),
             stranger
+        );
+        assertEq(noBurner.burner(), stranger);
+        // fresh desks for the vault below: each desk is wired only once
+        cd = new CaseDesk(
+            address(registry),
+            address(imd),
+            address(usdc),
+            address(text),
+            address(new SwarmQuestionBuilder()),
+            address(yolo),
+            stranger
+        );
+        dd = new DisputeDesk(
+            address(registry), address(imd), address(usdc), address(text), ballots, address(yolo), stranger
         );
         // the same desks with a real burner: a vault whose doer stake has no code still pays every acceptance
         ITaskVault v2 = ITaskVault(
@@ -150,16 +166,21 @@ contract DesksTest is Base {
         );
         vm.prank(author);
         usdc.approve(address(v2), type(uint256).max);
-        vm.prank(doer);
+        vm.startPrank(doer);
         imd.approve(address(v2), type(uint256).max);
+        usdc.approve(address(v2), type(uint256).max); // the doer bond's rew part is in R's own currency
+        vm.stopPrank();
         vm.prank(author);
-        uint256 t = v2.createTask(address(usdc), 100e6, uint64(_now() + 1 days), "Title", rulesOf("c"), 0, 0, "", _noSwap());
+        // PROOF_LINK: an X-post task (proof type 0) requires a screenshot, which this submission does not carry
+        uint256 t = v2.createTask(
+            address(usdc), 100e6, uint64(_now() + 1 days), "Title", rulesOf("c"), 0, PROOF_LINK, "", _noSwap()
+        );
         vm.prank(doer);
         uint256 s = v2.submit(t, "https://x.com/doer/status/1", _noEvidence(), 0, type(uint256).max, _noSwap());
         _warp(24 hours);
         v2.poke(t);
         assertEq(uint8(v2.getSubmission(s).outcome), uint8(Outcome.Accepted));
-        assertEq(v2.credits(address(usdc), doer), 90e6);
+        assertEq(v2.credits(address(usdc), doer), 90e6 + _bondOf(100e6)); // 90% and the bond's rew part back
         assertEq(v2.treasuryPot(address(usdc)), 10e6);
         assertEq(v2.getSettlement(s).stakeBps, 0);
         assertEq(vault.burner(), address(burner));
@@ -178,8 +199,15 @@ contract DesksTest is Base {
         v = ITaskVault(
             address(
                 new TaskVault(
-                    r, address(imd), address(usdc), address(yolo), address(new AttestationChecker(r)), address(text),
-                    address(cd), address(dd), address(burner)
+                    r,
+                    address(imd),
+                    address(usdc),
+                    address(yolo),
+                    address(new AttestationChecker(r)),
+                    address(text),
+                    address(cd),
+                    address(dd),
+                    address(burner)
                 )
             )
         );
@@ -225,8 +253,9 @@ contract DesksTest is Base {
         }
         // mode 4 with another submission time expected: the desk passes submittedAt, so the answer is 0
         vm.prank(author);
-        uint256 t2 =
-            v.createTask(address(usdc), 100e6, uint64(_now() + 7 days), "Title", rulesOf("c"), 0, PROOF_LINK, "", _noSwap());
+        uint256 t2 = v.createTask(
+            address(usdc), 100e6, uint64(_now() + 7 days), "Title", rulesOf("c"), 0, PROOF_LINK, "", _noSwap()
+        );
         vm.prank(doer);
         uint256 s2 = v.submit(t2, "https://x.com/doer/status/1", _noEvidence(), 0, type(uint256).max, _noSwap());
         m.set(4, doer, v.getSubmission(s2).submittedAt + 1);
@@ -236,14 +265,15 @@ contract DesksTest is Base {
         // the hub fails at the submission: submitted all the same, no bonus fixed
         m.setPowerFails(true);
         vm.prank(author);
-        uint256 t3 =
-            v.createTask(address(usdc), 100e6, uint64(_now() + 7 days), "Title", rulesOf("c"), 0, PROOF_LINK, "", _noSwap());
+        uint256 t3 = v.createTask(
+            address(usdc), 100e6, uint64(_now() + 7 days), "Title", rulesOf("c"), 0, PROOF_LINK, "", _noSwap()
+        );
         vm.prank(doer);
         uint256 s3 = v.submit(t3, "https://x.com/doer/status/1", _noEvidence(), 0, type(uint256).max, _noSwap());
         assertEq(v.getSubmission(s3).stakeBps, 0);
     }
 
-    function test_VaultRefusesCheckerOfAnotherRegistry() public {
+    function test_VaultDeploysWithCheckerOfAnotherRegistry() public {
         TextRules text = new TextRules();
         CaseDesk cd = new CaseDesk(
             address(registry),
@@ -264,7 +294,8 @@ contract DesksTest is Base {
             address(hub)
         );
         AttestationChecker foreign = new AttestationChecker(stranger);
-        vm.expectRevert(WrongWiring.selector);
+        // the constructor makes no call to the checker (empty-chain launch rehearsal, ADAPTATION.md): the vault
+        // deploys and refuses the checker on its first swarm question (test/LaunchAdaptation.t.sol)
         new TaskVault(
             address(registry),
             address(imd),
@@ -361,8 +392,7 @@ contract DesksTest is Base {
         uint256 s = _submit(doer, t);
         vm.deal(doer, 1 ether);
         vm.prank(doer);
-        (bool ok, bytes memory ret) =
-            address(vault).call{value: 1}(abi.encodeCall(ITaskVault.claimVoidSubmission, (s)));
+        (bool ok, bytes memory ret) = address(vault).call{value: 1}(abi.encodeCall(ITaskVault.claimVoidSubmission, (s)));
         assertFalse(ok);
         assertEq(bytes4(ret), TaskVault.NotPayable.selector);
         vm.prank(doer);

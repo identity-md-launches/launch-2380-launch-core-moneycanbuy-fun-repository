@@ -42,7 +42,6 @@ contract YoloLockHub {
     }
 
     mapping(address => Lock) public locks;
-    // slither-disable-next-line uninitialized-state
     mapping(address => Point[]) internal _history;
 
     event Locked(address indexed who, uint256 added, uint256 amount, uint64 end, uint256 power);
@@ -143,12 +142,12 @@ contract YoloLockHub {
 
     // slither-disable-next-line incorrect-equality
     function _checkpoint(address who, uint96 pw, uint64 end, uint32 epoch) private {
-        Point[] storage h = _history[who];
-        uint256 n = h.length;
-        if (n != 0 && h[n - 1].at == block.timestamp) {
-            h[n - 1] = Point(uint64(block.timestamp), end, pw, epoch);
+        // written through the mapping itself, not a storage pointer (static analysis then sees the writes)
+        uint256 n = _history[who].length;
+        if (n != 0 && _history[who][n - 1].at == block.timestamp) {
+            _history[who][n - 1] = Point(uint64(block.timestamp), end, pw, epoch);
         } else {
-            h.push(Point(uint64(block.timestamp), end, pw, epoch));
+            _history[who].push(Point(uint64(block.timestamp), end, pw, epoch));
         }
     }
 }
